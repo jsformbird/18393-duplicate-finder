@@ -175,6 +175,7 @@ async function removeDuplicatesFromCSVFile() {
   readline.question(`Type "proceed-with-remove" proceed with removing ${toRemoveVersions.length} versions a target: `, async (response) => {
     if (response.toLowerCase().trim() === 'proceed-with-remove') {
       const targetdb = await getTargetDb();
+      console.log(`Starting remove process... Please wait for a while.`);
       const result = await removeDocuments(targetdb, toRemoveQuery)
       console.log(`Operation response from db: ${JSON.stringify(result, null, 4)}`);
     } else {
@@ -217,6 +218,7 @@ async function detectConflictsAndWriteToCSVFile() {
   } else {
     targetDb = await getTargetDb();
   }
+  console.log('Looking for docs in the source...')
   const toProcess = await findDocuments(srcDb, evaluatedSrcQuery);
   // const toProcess = src;
   const documentIds = new Set();
@@ -224,7 +226,7 @@ async function detectConflictsAndWriteToCSVFile() {
   let toRemoveDocs = [];
 
   let docsWithUpdatesToRemoveCount = 0;
-
+  console.log('Looking at each doc for version conflicts...')
   for (const doc of toProcess) {
     // record unique documentIds
     documentIds.add(doc.documentId);
@@ -303,8 +305,6 @@ async function detectConflictsAndWriteToCSVFile() {
     });
 
     function generateCSVFile() {
-
-
       // console.log('\nTo remove documents at target (csv) ->');
       let csv = 'duplicateType,summaryName,serverUpdatedDate,documentId,versionId\n';
       for (const a of map.values()) {
