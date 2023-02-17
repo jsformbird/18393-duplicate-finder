@@ -226,7 +226,7 @@ async function detectConflictsAndWriteToCSVFile() {
   let toRemoveDocs = [];
 
   let docsWithUpdatesToRemoveCount = 0;
-  console.log('Looking at each doc for version conflicts...')
+  console.log('Looking at each document for conflicts at the target...');
   for (const doc of toProcess) {
     // record unique documentIds
     documentIds.add(doc.documentId);
