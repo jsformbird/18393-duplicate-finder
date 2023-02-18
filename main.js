@@ -1,5 +1,7 @@
 "use strict";
-const fs = require("fs");
+
+const pjson = require('./package.json');
+console.log(`Script version: ${pjson.version}`);
 /**
  * An over simplified mongo provider intended to be used for preparint the test db.
  * For code readability, We won't use the the formbird platform's mongodb provider because it has logic
