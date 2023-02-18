@@ -28,8 +28,8 @@ let A_SRCAUTHDB = 'admin';
 let A_SRCPASS = '****';
 
 let A_TARGET_RESTORE_DATE;
-let A_QUERY = `{"$and":[{"appTags":{"$ne": {"$in": ["directScript","rulesetinclude","ruleset"]}}},{"systemHeader.systemType": {"$ne": {"$in":["configuration","ruleset","rulesetInclude","template","component"]}}}, {"$or":[{"systemHeader.serverUpdatedDate" : {"$gte": {"$date": targetRestoreDate}}}, {"documentId":"a3426c80-d5e3-11e5-bb4c-0f0be17ce808"}, {"systemHeader.systemType":"schedule"}]}]}`;
-// let A_QUERY = `{ }`;
+let A_QUERY = `{"$and":[{"appTags":{"$ne": {"$in": ["directScript","rulesetinclude","ruleset"]}}},{"systemHeader.systemType": {"$ne": {"$in":["configuration","ruleset","rulesetInclude","template","component"]}}}, {"$or":[{"systemHeader.serverUpdatedDate" : {"$gte": targetRestoreDate}}, {"documentId":"a3426c80-d5e3-11e5-bb4c-0f0be17ce808"}, {"systemHeader.systemType":"schedule"}]}]}`;
+// let A_QUERY = `{"systemHeader.serverUpdatedDate" : {"$gte": targetRestoreDate}}`;
 let A_FILENAME;
 
 let A_TARGETDB_SAME_AS_SOURCE = false;
@@ -196,6 +196,7 @@ async function detectConflictsAndWriteToCSVFile() {
   let evaluatedSrcQuery;
   try {
     // eslint-disable-next-line max-len
+    // A_QUERY.replaceAll('targetRestoreDate', 'new Date(targetRestoreDate)')
     const getQuery = eval(`(targetRestoreDate) => { return ${A_QUERY} }`);
     evaluatedSrcQuery = getQuery(A_TARGET_RESTORE_DATE);
     console.log(`Final source query:\n${JSON.stringify(evaluatedSrcQuery, null, 0)}\n`);
@@ -273,7 +274,7 @@ async function detectConflictsAndWriteToCSVFile() {
 
   async function getDocUpdatesAtTarget(documentId, targetRestoreDate) {
     // eslint-disable-next-line max-len
-    const result = await findDocuments(targetDb, {'documentId' : documentId, "systemHeader.serverUpdatedDate" : {"$gte": {"$date": targetRestoreDate}}});
+    const result = await findDocuments(targetDb, {'documentId' : documentId, "systemHeader.serverUpdatedDate" : {"$gte": targetRestoreDate}});
     return result && result.length > 0 ? result : [];
   }
 
