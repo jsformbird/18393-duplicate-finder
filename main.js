@@ -1,5 +1,6 @@
 "use strict";
 
+const readline = require('readline');
 const pjson = require('./package.json');
 console.log(`Script version: ${pjson.version}`);
 /**
@@ -169,25 +170,31 @@ async function removeDuplicatesFromCSVFile() {
     toRemoveVersions.push(versionId);
   }
   const toRemoveQuery = {'systemHeader.versionId': {$in: toRemoveVersions} };
-
-  const readline = require('readline').createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-  readline.question(`Type "proceed-with-remove" proceed with removing ${toRemoveVersions.length} versions a target: `, async (response) => {
-    if (response.toLowerCase().trim() === 'proceed-with-remove') {
-      const targetdb = await getTargetDb();
-      console.log(`Starting remove process... Please wait for a while.`);
-      const result = await removeDocuments(targetdb, toRemoveQuery)
-      console.log(`Operation response from db: ${JSON.stringify(result, null, 4)}`);
-    } else {
-      console.log('Aborted remove operation.');
-    }
-    readline.close();
-    process.exit();
-  });
-
+  const response = await userPrompt(`Type "proceed-with-remove" proceed with removing ${toRemoveVersions.length} versions at target: `);
+  if (response.toLowerCase().trim() === 'proceed-with-remove') {
+    const targetdb = await getTargetDb();
+    console.log(`Starting remove process... Please wait for a while.`);
+    const result = await removeDocuments(targetdb, toRemoveQuery)
+    console.log(`Operation response from db: ${JSON.stringify(result, null, 4)}`);
+  } else {
+    console.log('Aborted remove operation.');
+  }
+  process.exit();
 }
+
+async function userPrompt(questionStr) {
+  return new Promise( resolve => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+    rl.question(questionStr, (response) => {
+      resolve(response);
+      rl.close();
+    });
+  });
+}
+
 async function detectConflictsAndWriteToCSVFile() {
   if (!A_TARGET_RESTORE_DATE) {
     throw new Error('Target restore date not set. Set as app param as follows: "--targetRestoreDate=2021-01-27T06:55:45.366Z"');
@@ -281,36 +288,77 @@ async function detectConflictsAndWriteToCSVFile() {
   async function conflictsToFile(result) {
     const map = new Map();
     for (const a of result.toRemoveVersion) {
-      if (!map.has(a._id)) {
+      const id = a._id.toString();
+      if (!map.has(id)) {
         a.__duplicateType = 'versionId';
-        map.set(a._id, a);
+        map.set(id, a);
       }
     }
     for (const a of result.toRemoveDocs) {
-      if (!map.has(a._id)) {
+      const id = a._id.toString();
+      if (!map.has(id)) {
         a.__duplicateType = 'documentId';
-        map.set(a._id, a);
+        map.set(id, a);
       }
     }
 
-    const readline = require('readline').createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-    readline.question('Type c to continue writing to csv: ', (response) => {
-      if (response.toLowerCase().trim() === 'c') {
-        generateCSVFile();
-      } else {
-        console.log('Aborted writing to csv.');
-      }
-      readline.close();
-      process.exit();
-    });
 
-    function generateCSVFile() {
+    // all for filename
+    const tzoffset = (new Date()).getTimezoneOffset() * 60000; //offset in milliseconds
+    const restoreDateAslocalISOTime = (new Date(A_TARGET_RESTORE_DATE - tzoffset)).toISOString().slice(0, -1);
+    let restoreDateSerialised = restoreDateAslocalISOTime.replaceAll(':', '');
+    restoreDateSerialised = restoreDateSerialised.split('.')[0]; // remove digit seconds
+    // "targetdb"_doc_conflicts_$(date+'%Y-%M-%d')T$(date+'%H-%M').csv
+
+    const response1 = await userPrompt('Type c to continue writing to csv: ');
+    if (response1.toLowerCase().trim() === 'c') {
+      const filename = `${targetDb.databaseName}_doc_conflicts_${restoreDateSerialised}.csv`;
+      generateCSVFile(map.values(), filename);
+    } else {
+      console.log('Aborted writing to csv.');
+    }
+
+
+    const response2 = await userPrompt('Export source db document increment: Y/N: ');
+    if (response2.toLowerCase().trim() === 'y') {
+      let docsPerInc = await userPrompt('Type-in docs per increment or just enter to use default (8K docs per file): ');
+      docsPerInc = Number(docsPerInc);
+      if (isNaN(docsPerInc)) {
+        docsPerInc = 8_000;
+      }
+
+      console.log(`To insert documents: ${map.size}`);
+      let incrementCount = 1;
+      let dump = [];
+      map.forEach((value, key) => {
+        dump.push(value);
+        if (dump.length === docsPerInc) {
+          console.log(`To insert: ` + dump.length);
+          generateIncrementCSVFile(targetDb.databaseName, restoreDateSerialised, incrementCount++, dump);
+          dump = [];
+        }
+      });
+      if (dump.length > 0) {
+        console.log(`To insert: ` + dump.length);
+        generateIncrementCSVFile(targetDb.databaseName, restoreDateSerialised, incrementCount, dump);
+      }
+      console.log(`Written ${incrementCount} files.`)
+    } else {
+      console.log('Aborted exporting source by increments into a file.');
+    }
+
+
+    process.exit();
+
+    function generateIncrementCSVFile(targetDbName, restoreDateStr, incrementCount, docs) {
+      const filename = `${targetDbName}-mongodb-increment_${restoreDateStr}_${incrementCount}.csv`;
+      generateCSVFile(docs, filename);
+    }
+
+    function generateCSVFile(documentArray, filename) {
       // console.log('\nTo remove documents at target (csv) ->');
       let csv = 'duplicateType,summaryName,serverUpdatedDate,documentId,versionId\n';
-      for (const a of map.values()) {
+      for (const a of documentArray) {
         // type, systemHeader.summaryName, systemHeader.serverUpdatedDate, documentId, versionId
         // eslint-disable-next-line max-len
         const dateStr = a.systemHeader.serverUpdatedDate ? new Date(a.systemHeader.serverUpdatedDate).toISOString() : undefined;
@@ -319,12 +367,6 @@ async function detectConflictsAndWriteToCSVFile() {
       // console.log(csv);
 
       const fs = require("fs");
-      const tzoffset = (new Date()).getTimezoneOffset() * 60000; //offset in milliseconds
-      const restoreDateAslocalISOTime = (new Date(A_TARGET_RESTORE_DATE - tzoffset)).toISOString().slice(0, -1);
-      let restoreDateSerialised = restoreDateAslocalISOTime.replaceAll(':', '');
-      restoreDateSerialised = restoreDateSerialised.split('.')[0]; // remove digit seconds
-      // "targetdb"_doc_conflicts_$(date+'%Y-%M-%d')T$(date+'%H-%M').csv
-      const filename = `${targetDb.databaseName}_doc_conflicts_${restoreDateSerialised}.csv`;
       fs.writeFileSync(filename, csv);
       console.log(`File written: ${filename}`);
     }
